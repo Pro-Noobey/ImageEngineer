@@ -2,7 +2,7 @@
 
 compiler=g++
 include=include
-files="src/*.cpp include/bmp/image_io_bmp.cpp include/netpbm/image_io_pbm.cpp"
+files="src/*.cpp"
 output=build/main
 flags="-O2"
 

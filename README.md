@@ -1,85 +1,53 @@
-# ImgLib
+# ImageEngineer
 
-A lightweight native image processing library written in C++ that supports the following formats:
+ImageEngineer is a small, single-header-friendly C++ image processing library
+that focuses on teaching and low-level image format handling without
+third-party image libraries.
 
-- **NetPBM formats**
-  - PBM (ASCII & Binary)
-  - PGM (ASCII & Binary)
-  - PPM (ASCII & Binary)
-- **BMP**
-  - 24-bit & 32-bit (uncompressed)
+Supported formats
+- NetPBM: PBM / PGM / PPM (ASCII + Binary)
+- BMP: 24-bit, 32-bit and 8-bit RLE8 (basic subset)
 
-With basic filters and transformations built-in, this project focuses on understanding image formats at a low level and handling everything manually without external image libraries.
+Features
+- Read and write NetPBM and BMP files
+- Convert between formats and sample depths (8/16-bit internally)
+- Basic image operations: blur, grayscale (average/luminosity),
+  black & white, inversion, bloom, vertical/horizontal flip
+- Small codebase intended for learning and experimentation
 
-## Supported Formats
-
-### Input
-- PBM (ASCII & Binary)
-- PGM (ASCII & Binary)
-- PPM (ASCII & Binary)
-- BMP (24-bit & 32-bit, uncompressed)
-
-### Output
-- PBM
-- PGM
-- PPM
-- BMP (24-bit & 32-bit)
-
-## Features
-
-- Native BMP support (no external libs)
-- Full NetPBM support
-- Format conversion between NetPBM and BMP
-- Built-in image operations:
-  - Blur
-  - Grayscale (Average & Luminosity)
-  - Black & White
-  - Color Inversion
-  - Vertical Flip
-  - Horizontal Flip
-- Supports images with MAXVAL &gt; 255 internally
-- Manual parsing and writing of file formats
-
-## Example Usage
+Quick usage
+Include the single header and call the helpers:
 
 ```cpp
-Image img = loadImage("input.ppm");
-img = Grayscale(img);
-writeImage("output.bmp", img, BMP);
+#include "ImageEngineer.h"
+
+// Load (use the appropriate loader for your format)
+auto img = loadImagePpm("input.ppm", /*binary=*/true);
+
+// Apply an operation
+auto gray = Grayscale(img);
+
+// Write back to disk
+writeImagePpm("out.ppm", gray, /*binary=*/true);
 ```
 
-## Design Goals
+Build
+- Windows: run `build.bat`
+- Linux/macOS: run `build.sh`
 
-- Zero external image libraries
-- Educational focus on image formats
-- Cross-platform compatibility
-- Simple, hackable codebase
+Notes
+- The project uses OpenMP for the blur implementation; enable OpenMP in
+  your compiler flags if you want the parallel speed-up.
+- The repository now provides `include/ImageEngineer.h` which aggregates the
+  original headers into a single include for convenience.
 
-## Build
-
-Compile with any modern C++ compiler. There is a build.bat for Windows, build.sh for Linux.:  
-
-Linux >>
-```bash
-./build
-```
-Windows >>
-```powershell
-.\build
-```
-
-(Enable OpenMP if you're using the blur optimization)
-
-## Project Structure
+Project structure (relevant files)
 
 ```
-include/bmp        -> BMP reader/writer
-include/netpbm     -> PBM/PGM/PPM reader/writer
-image.h     -> Core image structures
-ops.cpp     -> Image operations
-main.cpp    -> Example usage / CLI
+include/            -> headers (ImageEngineer.h)
+src/                -> implementation / example CLI
+build.bat / build.sh -> build scripts
 ```
 
-## Why This Exists
-
-### Because sometimes it’s more fun to *build the wheel* than use the wheel
+This project exists for education and experimentation — feel free to fork
+and modify `ImageEngineer.h` for your own experiments.
