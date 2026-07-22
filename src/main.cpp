@@ -5,6 +5,11 @@
 #include "netpbm/image_io_pbm.h"
 #include "image.h"
 
+// IMPORTANT NOTICE!!
+/*
+THIS CODE IS NOT TESTED IF IT WORKS AS A SAMPLE
+DUE TO NEW STRUCTURAL IMPROVEMENTS
+*/
 std::string input(std::string prompt)
 {
     std::string response;
