@@ -10,7 +10,11 @@
 #include <stdexcept>
 #include <string>
 #include <typeinfo>
-
+#include <iostream>
+#include <chrono>
+#include <ctime>
+#include <iomanip>
+#include <sstream>
 
 /**
  * @file image.h
@@ -35,9 +39,10 @@ const int BMP = 7;
 const int GRAYSCALE_AVERAGE = 1;
 const int GRAYSCALE_LUMINOSITY = 2;
 
-
+const int BITMAP_NONE = 0;
 const int BITMAP_RLE8 = 1;
 const int BITMAP_RLE4 = 2;
+const int BITMAP_BITFIELDS = 3;
 
 /**
  * @brief 8-bit grayscale pixel.
@@ -406,14 +411,362 @@ inline Gray8BitPixel toGray8Bit(Pixel p)
 }
 
 
-// Forward declare Image template and XY so they can be used by templates below
-template<typename Pixel>
-class Image;
+/*
+### IMPORTANT:
+This enum's values are INTEGRAL,
+meaning that THEY ARE NOT STRINGS.
+They are just identifiers for the log level,
+and do not have any inherent string representation. 
+When logging messages,
+you can use these enum values to determine how to format or color the output,
+but you will need to convert them to strings manually if you want to include the log level in the message text.
+*/
+enum class ImageLoggerLevel : uint8_t
+{
+    NORMAL,
+    INFO,
+    WARNING,
+    ERROR
+};
+
+struct MessageBlock
+{
+    std::string message;
+    ImageLoggerLevel level;
+    /*
+    Recommended usage for coloring:
+    NORMAL - Default terminal color/ White
+    Info - Green
+    Warning - Yellow
+    Error - Red
+    */
+    RGB8BitPixel color;
+};
+
+std::string getTimestamp() {
+    auto now = std::chrono::system_clock::now();
+    std::time_t t = std::chrono::system_clock::to_time_t(now);
+
+    std::tm local_time{};
+
+    #ifdef _WIN32
+        localtime_s(&local_time, &t);
+    #else
+        localtime_r(&t, &local_time);
+    #endif
+
+    std::ostringstream oss;
+    oss << std::put_time(&local_time, "%b %d : %Hh : %Mm : %Ss");
+
+    return oss.str();
+}
+
+std::string formatMessage(MessageBlock msg)
+{
+    std::string levelStr;
+    switch (msg.level)
+    {
+        case ImageLoggerLevel::NORMAL: levelStr = "NORMAL"; break;
+        case ImageLoggerLevel::INFO: levelStr = "INFO"; break;
+        case ImageLoggerLevel::WARNING: levelStr = "WARNING"; break;
+        case ImageLoggerLevel::ERROR: levelStr = "ERROR"; break;
+    }
+    
+        auto now = std::chrono::system_clock::now();
+
+        // Convert to time_t for calendar time
+        auto t_c = std::chrono::system_clock::to_time_t(now);
+
+        // Get milliseconds part
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count() % 1000;
+
+        // Format nicely
+        // need to fix
+        std::string timestamp = getTimestamp();
+
+        /*
+        ## IMPORTANT:  
+        The color is applied using ANSI escape codes, which may not work in all terminal environments.
+        #### The format is: \x1b[38;2;<r>;<g       
+        */
+        std::string color = "\x1b[38;2;" + 
+                            std::to_string(msg.color.r) + ";" + 
+                            std::to_string(msg.color.g) + ";" + 
+                            std::to_string(msg.color.b) + "m";
+
+    return "[" + timestamp + "][" + levelStr + "] " + color + msg.message + "\x1b[0m\n" /*Reset color*/;
+}
+
+class ImageLogger
+{
+private:
+    std::vector<MessageBlock> messages;
+public:
+    void log
+    (
+        const std::string& message,
+        ImageLoggerLevel level = ImageLoggerLevel::NORMAL,
+        RGB8BitPixel color = RGB8BitPixel{255, 255, 255}
+    )
+    {
+        messages.push_back({message, level, color});
+    }
+
+    void clear()
+    {
+        messages.clear();
+    }
+
+    MessageBlock getMessage(int index) const
+    {
+        if (index < 0 || index >= messages.size())
+        {
+            throw std::out_of_range("Index out of range in getMessage");
+        }
+        return messages[index];
+    }
+
+    std::vector<MessageBlock> getAllMessages() const
+    {
+        return messages;
+    }
+
+    void flush()
+    {
+        for (const auto& msg : messages)
+        {  
+            std::cout << formatMessage(msg);
+        }
+        messages.clear();
+    }
+};
+
+struct EmptyFormatData {};
+
+#pragma pack(push, 1)
+
+struct CIEXYZ
+{
+    int32_t ciexyzX;
+    int32_t ciexyzY;
+    int32_t ciexyzZ;
+};
+
+struct CIEXYZTRIPLE
+{
+    CIEXYZ ciexyzRed;
+    CIEXYZ ciexyzGreen;
+    CIEXYZ ciexyzBlue;
+};
+
+struct BMPFileHeader
+{
+    uint16_t bfType;      // Signature: must be 'BM' (0x4D42)
+    uint32_t bfSize;      // Size of the file in bytes
+    uint16_t bfReserved1; // Reserved, must be 0
+    uint16_t bfReserved2; // Reserved, must be 0
+    uint32_t bfOffBits;   // Offset to the pixel array (start of bitmap data)
+};
+
+struct BMPInfoHeader
+{
+    uint32_t biSize;          // Size of this header (40 bytes for V1)
+    int32_t  biWidth;         // Image width in pixels
+    int32_t  biHeight;        // Image height in pixels (negative for top-down)
+    uint16_t biPlanes;        // Must be 1
+    uint16_t biBitCount;      // Bits per pixel: 1, 4, 8, 16, 24, 32
+    uint32_t biCompression;   // Compression type (0=BI_RGB, 1=RLE8, 2=RLE4, 3=BITFIELDS)
+    uint32_t biSizeImage;     // Image data size (may be 0 for uncompressed)
+    int32_t  biXPelsPerMeter; // Horizontal resolution in pixels/meter (optional)
+    int32_t  biYPelsPerMeter; // Vertical resolution in pixels/meter (optional)
+    uint32_t biClrUsed;       // Number of colors used in palette (0 = default)
+    uint32_t biClrImportant;  // Number of important colors (0 = all)
+};
+
+struct BMPV3InfoHeader 
+{
+    uint32_t bV4RedMask;
+    uint32_t bV4GreenMask;
+    uint32_t bV4BlueMask;
+    uint32_t bV4AlphaMask; // optional
+};
+
+struct BMPV4Header
+{
+    uint32_t bV4CSType;    // Color space type
+    CIEXYZTRIPLE bV4Endpoints; // CIEXYZTRIPLE endpoints (color space info)
+    uint32_t bV4GammaRed;
+    uint32_t bV4GammaGreen;
+    uint32_t bV4GammaBlue;
+};
+
+struct BMPV5Header
+{
+    uint32_t bV5Intent;      // Rendering intent
+    uint32_t bV5ProfileData; // Offset to ICC profile
+    uint32_t bV5ProfileSize; // Size of ICC profile
+    uint32_t bV5Reserved;    // Reserved
+};
+
+struct BmpFormatData
+{
+    BMPFileHeader fileHeader;
+    BMPInfoHeader infoHeader;
+    BMPV3InfoHeader v3Header;
+    BMPV4Header v4Header;
+    BMPV5Header v5Header;
+};
+
+#pragma pack(pop)
 
 struct XY
 {
     int x;
     int y;
+};
+
+/**
+ * @brief Generic image container.
+ *
+ * `Image<Pixel>` stores a contiguous pixel buffer in row-major order and
+ * exposes simple accessors. The `Pixel` type is one of the pixel structs
+ * declared above (for example `RGB16BitPixel`).
+ */
+template<typename Pixel, typename FormatData = EmptyFormatData>
+class Image
+{
+private:
+    std::vector<Pixel> PixelData;
+public:
+    int WIDTH;
+    int HEIGHT;
+    int MAXVAL;
+    int TYPE;
+    int CHANNELS = 3;
+    FormatData FORMATDATA;
+    /**
+     * @brief Construct an Image with dimensions and metadata.
+     *
+     * @param width Image width in pixels.
+     * @param height Image height in pixels.
+     * @param maxval Maximum sample value (used by PNM-style formats).
+     * @param type File/type identifier (one of the PBM/PGM/PPM/BMP constants).
+     * @param channels Number of channels per pixel (default 3).
+     */
+    Image(int width, int height, int maxval, int type, int channels = 3, FormatData formatData = FormatData()):
+        FORMATDATA(formatData),
+        WIDTH(width),
+        HEIGHT(height),
+        MAXVAL(maxval),
+        TYPE(type),
+        CHANNELS(channels)
+    {
+        Init(); // allocate pixel buffer
+    }
+    
+    /*
+    Intializes PixelData size
+    */
+    /**
+     * @brief Allocate or reallocate the internal pixel buffer.
+     *
+     * The buffer size is set to `WIDTH * HEIGHT`. Existing pixel values are
+     * discarded when this is called.
+     */
+    void Init()
+    {
+        PixelData.resize(WIDTH * HEIGHT);
+    }
+
+    /*
+    Unsafe way to get pixel values
+    But FAST
+    ------------------------------
+    Does no bound checking
+    */
+    Pixel getPixelRaw(XY coord)
+    {
+        return PixelData[coord.y * WIDTH + coord.x];
+    }
+
+    /*
+    Unsafe way to set pixel values
+    But FAST
+    ------------------------------
+    Does no bound checking
+    */
+    void setPixelRaw(XY coord, Pixel value)
+    {
+        PixelData[coord.y * WIDTH + coord.x] = value;
+    }
+
+    /*
+    Safe way to get pixel values
+    But slow
+    */
+    /**
+     * @brief Get a pixel at `coord` (bounds-checked).
+     *
+     * @throws std::out_of_range if coordinates are outside the image.
+     */
+    Pixel Get(XY coord) const
+    {
+        if (coord.x < 0 || coord.x >= WIDTH || coord.y < 0 || coord.y >= HEIGHT)
+        {
+            throw std::out_of_range("Pixel coordinates out of bounds");
+        }
+        return PixelData[coord.y * WIDTH + coord.x];
+    }
+
+    /*
+    Safe way to set pixel values
+    */
+    /**
+     * @brief Set a pixel at `coord` to `value` (bounds-checked).
+     */
+    void Set(XY coord, Pixel value)
+    {
+        if (coord.x < 0 || coord.x >= WIDTH || coord.y < 0 || coord.y >= HEIGHT)
+        {
+            throw std::out_of_range("Pixel coordinates out of bounds");
+        }
+        PixelData[coord.y * WIDTH + coord.x] = value;
+    }
+
+    // Delete Image Buffer
+    /**
+     * @brief Clear the internal pixel buffer, releasing memory.
+     */
+    void DeleteImageBuffer()
+    {
+        PixelData.clear();
+    }
+
+    const std::vector<Pixel>& returnImageBufferConst() const
+    {
+        return PixelData;
+    } 
+
+    /*
+    ## Resize image and reallocate buffer  
+    
+    #### IMPORTANT  
+
+    This only resizes the vector. It does not scale the pixels up or down.  
+    It simply changes the dimensions and allocates a new buffer of the appropriate size.  
+    The pixel data in the new buffer will be uninitialized (default constructed).  
+    Use with caution, as this can lead to loss of data if not used properly.
+
+    #### This does not resample image content;  
+    the buffer is reallocated and  
+    default-initialized pixels replace any previous contents.
+    */
+    void ResizeImage(int new_width, int new_height)
+    {
+        WIDTH = new_width;
+        HEIGHT = new_height;
+        Init(); 
+    }
 };
 
 /**
@@ -458,7 +811,6 @@ PixelReturnType convertPixel(PixelInputType p)
     {
         throw std::runtime_error(std::string("Unsupported conversion from ") + typeid(PixelInputType).name() + " to " + typeid(PixelReturnType).name());
     }
-
 }
 
 /**
@@ -493,12 +845,12 @@ PixelReturnType convertPixel(PixelInputType p)
  * Performs a pixel-by-pixel conversion and returns a new `Image<PixelReturnType>`
  * with the same dimensions and metadata as the source `img`.
  */
-template<typename PixelReturnType, typename PixelInputType>
-Image<PixelReturnType> convertImage(
-    const Image<PixelInputType>& img
+template<typename PixelReturnType, typename PixelInputType, typename FormatDataType = EmptyFormatData>
+Image<PixelReturnType, FormatDataType> convertImage(
+    const Image<PixelInputType, FormatDataType>& img
 )
 {
-    Image<PixelReturnType> new_img(img.WIDTH, img.HEIGHT, img.MAXVAL, img.TYPE, img.CHANNELS);
+    Image<PixelReturnType, FormatDataType> new_img(img.WIDTH, img.HEIGHT, img.MAXVAL, img.TYPE, img.CHANNELS, img.FORMATDATA);
 
     for (int y = 0; y < img.HEIGHT; y++)
     {
@@ -513,120 +865,29 @@ Image<PixelReturnType> convertImage(
     return new_img;
 };
 
-
-/**
- * @brief Generic image container.
- *
- * `Image<Pixel>` stores a contiguous pixel buffer in row-major order and
- * exposes simple accessors. The `Pixel` type is one of the pixel structs
- * declared above (for example `RGB16BitPixel`).
- */
-template<typename Pixel>
-class Image
+template<typename PixelType, typename FormatDataType = EmptyFormatData>
+std::vector<uint8_t> convertToRawBuffer(const Image<PixelType, FormatDataType>& img)
 {
-private:
-    std::vector<Pixel> PixelData;
-public:
-    int WIDTH;
-    int HEIGHT;
-    int MAXVAL;
-    int TYPE;
-    int CHANNELS = 3;
-    /**
-     * @brief Construct an Image with dimensions and metadata.
-     *
-     * @param width Image width in pixels.
-     * @param height Image height in pixels.
-     * @param maxval Maximum sample value (used by PNM-style formats).
-     * @param type File/type identifier (one of the PBM/PGM/PPM/BMP constants).
-     * @param channels Number of channels per pixel (default 3).
-     */
-    Image(int width, int height, int maxval, int type, int channels = 3)
-    :   WIDTH(width),
-        HEIGHT(height),
-        MAXVAL(maxval),
-        TYPE(type),
-        CHANNELS(channels)
-    {
-        Init(); // allocate pixel buffer
-    }
-    
-    /*
-    Intializes PixelData size
-    */
-    /**
-     * @brief Allocate or reallocate the internal pixel buffer.
-     *
-     * The buffer size is set to `WIDTH * HEIGHT`. Existing pixel values are
-     * discarded when this is called.
-     */
-    void Init()
-    {
-        PixelData.resize(WIDTH * HEIGHT);
-    }
+    std::vector<uint8_t> buffer;
+    auto pixels = img.returnImageBufferConst();
 
-    /*
-    Safe way to get pixel values
-    */
-    /**
-     * @brief Get a pixel at `coord` (bounds-checked).
-     *
-     * @throws std::out_of_range if coordinates are outside the image.
-     */
-    Pixel Get(XY coord) const
+    for (int y = 0; y < img.HEIGHT; y++)
     {
-        if (coord.x < 0 || coord.x >= WIDTH || coord.y < 0 || coord.y >= HEIGHT)
+        for (int x = 0; x < img.WIDTH; x++)
         {
-            throw std::out_of_range("Pixel coordinates out of bounds");
+            PixelType pixel = pixels[y * img.WIDTH + x];
+            
+            auto p = convertPixel<RGBA8BitPixel, PixelType>(pixel);
+
+            buffer.push_back(p.r);
+            buffer.push_back(p.g);
+            buffer.push_back(p.b);
+            buffer.push_back(p.a);
+
         }
-        return PixelData[coord.y * WIDTH + coord.x];
     }
 
-    /*
-    Safe way to set pixel values
-    */
-    /**
-     * @brief Set a pixel at `coord` to `value` (bounds-checked).
-     */
-    void Set(XY coord, Pixel value)
-    {
-        if (coord.x < 0 || coord.x >= WIDTH || coord.y < 0 || coord.y >= HEIGHT)
-        {
-            throw std::out_of_range("Pixel coordinates out of bounds");
-        }
-        PixelData[coord.y * WIDTH + coord.x] = value;
-    }
-
-    // Delete Image Buffer
-    /**
-     * @brief Clear the internal pixel buffer, releasing memory.
-     */
-    void DeleteImageBuffer()
-    {
-        PixelData.clear();
-    }
-
-    /*
-    Resize image and reallocate buffer
-    ----------------------------------
-    ### IMPORTANT
-    This only resizes the vector. It does not scale the pixels up or down.  
-    It simply changes the dimensions and allocates a new buffer of the appropriate size.  
-    The pixel data in the new buffer will be uninitialized (default constructed).  
-    Use with caution, as this can lead to loss of data if not used properly.
-    */
-    /**
-     * @brief Resize the image dimensions and reallocate the buffer.
-     *
-     * This does not resample image content; the buffer is reallocated and
-     * default-initialized pixels replace any previous contents.
-     */
-    void ResizeImage(int new_width, int new_height)
-    {
-        WIDTH = new_width;
-        HEIGHT = new_height;
-        Init(); 
-    }
-};
+    return buffer;
+}
 
 #endif

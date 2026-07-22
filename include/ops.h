@@ -44,10 +44,10 @@ std::vector<XY> findNeighborIndices(int kernel_size, XY center)
  * `kernel_size` neighbourhood. The operation is implemented using OpenMP for
  * parallelization across rows.
  */
-template<typename Pixel>
-Image<Pixel> Blur(Image<Pixel>& src_img, int passes = 5, int kernel_size = 3)
+template<typename Pixel, typename FormatData>
+Image<Pixel, FormatData> Blur(Image<Pixel, FormatData>& src_img, int passes = 5, int kernel_size = 3)
 {
-    Image<Pixel> new_img = src_img;
+    Image<Pixel, FormatData> new_img = src_img;
 
     uint32_t average_r, average_g, average_b, average_a;
     int num_neighbors;
@@ -104,13 +104,13 @@ Image<Pixel> Blur(Image<Pixel>& src_img, int passes = 5, int kernel_size = 3)
  * `method` selects either a simple average or a weighted luminosity formula
  * using `weights` for the RGB channels.
  */
-template<typename Pixel>
-Image<Pixel> Grayscale(Image<Pixel>& src_img, int method = GRAYSCALE_AVERAGE, std::vector<float> weights = {0.21f, 0.72f, 0.07f})
+template<typename Pixel, typename FormatData>
+Image<Pixel, FormatData> Grayscale(Image<Pixel, FormatData>& src_img, int method = GRAYSCALE_AVERAGE, std::vector<float> weights = {0.21f, 0.72f, 0.07f})
 {
     if (method != GRAYSCALE_AVERAGE && method != GRAYSCALE_LUMINOSITY)
         throw std::invalid_argument("Invalid grayscale method");
 
-    Image<Pixel> new_img = src_img;
+    Image<Pixel, FormatData> new_img = src_img;
 
     if (method == GRAYSCALE_AVERAGE)
     {
@@ -147,13 +147,13 @@ Image<Pixel> Grayscale(Image<Pixel>& src_img, int method = GRAYSCALE_AVERAGE, st
  *
  * `threshold` is taken from `src_img.MAXVAL` if zero is passed.
  */
-template<typename Pixel>
-Image<Pixel> Bw(Image<Pixel>& src_img, uint16_t threshold = 0)
+template<typename Pixel, typename FormatData>
+Image<Pixel, FormatData> Bw(Image<Pixel, FormatData>& src_img, uint16_t threshold = 0)
 {
     if (threshold == 0)
         threshold = src_img.MAXVAL / 2;
 
-    Image<Pixel> new_img = src_img;
+    Image<Pixel, FormatData> new_img = src_img;
 
     for (int y = 0; y < src_img.HEIGHT; y++)
     {
@@ -169,8 +169,8 @@ Image<Pixel> Bw(Image<Pixel>& src_img, uint16_t threshold = 0)
 /**
  * @brief Return true if every pixel in `img` has equal R,G,B components.
  */
-template<typename Pixel>
-bool isGrayscaleOrBw(Image<Pixel>& img)
+template<typename Pixel, typename FormatData>
+bool isGrayscaleOrBw(Image<Pixel, FormatData>& img)
 {
     for (int y = 0; y < img.HEIGHT; y++)
     {
@@ -187,10 +187,10 @@ bool isGrayscaleOrBw(Image<Pixel>& img)
 /**
  * @brief Invert the color channels of `src_img` producing a new image.
  */
-template<typename Pixel>
-Image<Pixel> invertColor(Image<Pixel>& src_img)
+template<typename Pixel, typename FormatData>
+Image<Pixel, FormatData> invertColor(Image<Pixel, FormatData>& src_img)
 {
-    Image<Pixel> out = src_img;
+    Image<Pixel, FormatData> out = src_img;
 
     for (int y = 0; y < src_img.HEIGHT; y++)
     {
@@ -198,6 +198,7 @@ Image<Pixel> invertColor(Image<Pixel>& src_img)
         {
             auto p = toRGBA16Bit(src_img.Get(XY{x, y}));
 
+            /*
             // toRGBA16Bit() produces 16-bit channel values (0..65535).
             // Use the 16-bit max (65535) for inversion so conversions
             // back to the image's pixel type scale correctly.
@@ -212,6 +213,16 @@ Image<Pixel> invertColor(Image<Pixel>& src_img)
                 Clamp(inv_b, 65535),
                 Clamp(inv_a, 65535)
             };
+            */
+
+            // More optimized, less cluttery code snippet for inversion
+            RGBA16BitPixel inv = {
+                ~p.r,
+                ~p.g,
+                ~p.b,
+                p.a // Preserve Alpha channel
+            };
+            
 
             out.Set(XY{x, y}, convertPixel<Pixel, RGBA16BitPixel>(inv));
         }
@@ -223,10 +234,10 @@ Image<Pixel> invertColor(Image<Pixel>& src_img)
 /**
  * @brief Flip the image vertically (top <-> bottom).
  */
-template<typename Pixel>
-Image<Pixel> flipVertical(Image<Pixel>& src_img)
+template<typename Pixel, typename FormatData>
+Image<Pixel, FormatData> flipVertical(Image<Pixel, FormatData>& src_img)
 {
-    Image<Pixel> out = src_img;
+    Image<Pixel, FormatData> out = src_img;
 
     for (int y = 0; y < src_img.HEIGHT; y++)
     {
@@ -241,10 +252,10 @@ Image<Pixel> flipVertical(Image<Pixel>& src_img)
 /**
  * @brief Flip the image horizontally (left <-> right).
  */
-template<typename Pixel>
-Image<Pixel> flipHorizontal(Image<Pixel>& src_img)
+template<typename Pixel, typename FormatData>
+Image<Pixel, FormatData> flipHorizontal(Image<Pixel, FormatData>& src_img)
 {
-    Image<Pixel> out = src_img;
+    Image<Pixel, FormatData> out = src_img;
 
     for (int y = 0; y < src_img.HEIGHT; y++)
     {
@@ -266,15 +277,15 @@ Image<Pixel> flipHorizontal(Image<Pixel>& src_img)
  * @param intensity Multiplier applied when adding the blurred bright image
  * back into the original.
  */
-template<typename Pixel>
-Image<Pixel> Bloom(
-    Image<Pixel>& img,
+template<typename Pixel, typename FormatData>
+Image<Pixel, FormatData> Bloom(
+    Image<Pixel, FormatData>& img,
     int brightnessThreshold = 32768, /*In 16 Bit*/
-    int radius = 13,
+    int radius = 5,
     int intensity = 1
 )
 {
-    Image<Pixel> brightImage = img;
+    Image<Pixel, FormatData> brightImage = img;
 
     for (int y = 0; y < img.HEIGHT; y++)
     {
@@ -296,9 +307,9 @@ Image<Pixel> Bloom(
         }
     }
 
-    Image<Pixel> blurred = Blur(brightImage, 1, radius);
+    Image<Pixel, FormatData> blurred = Blur(brightImage, 1, radius);
 
-    Image<Pixel> finalImage = img;
+    Image<Pixel, FormatData> finalImage = img;
 
     brightImage.DeleteImageBuffer(); // free memory of brightImage as it's no longer needed
 

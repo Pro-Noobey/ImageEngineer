@@ -108,14 +108,17 @@ std::vector<bool> extract(uint8_t byte)
  * In PBM files each pixel is a single bit. The returned image uses 16-bit
  * RGB pixels where black is 0 and white is `65035` (chosen by this project).
  */
-Image<RGB16BitPixel> loadImagePbm(const std::string path, bool binary)
+Image<RGB16BitPixel> loadImagePbm(const std::string path, bool binary, ImageLogger* logger = nullptr)
 {
 	std::ifstream file(path, std::ios::binary);
 
 	if (!file.is_open())
 	{
-		std::string msg = "File Did not open, Path: "s + path + '\n';
-		throw std::runtime_error(msg);
+		if (logger)
+		{
+			std::string msg = "In loadImagePbm() function, File Did not open, Path: "s + path + '\n';
+			logger->log(msg, ImageLoggerLevel::ERROR, RGB8BitPixel{255, 0, 0});
+		}
 		return Image<RGB16BitPixel>{16, 16, 65035, PBM_ASCII, 3};
 	}
 
@@ -128,8 +131,11 @@ Image<RGB16BitPixel> loadImagePbm(const std::string path, bool binary)
 
 		if (magic[0] != 'P' && magic[1] != '4')
 		{
-			std::string msg = "Magic is not P4. Magic: "s +magic[0]+magic[1] + '\n';
-			throw std::runtime_error(msg);
+			if (logger)
+			{
+				std::string msg = "In loadImagePbm() function, Magic is not P4. Magic: "s +magic[0]+magic[1] + '\n';
+				logger->log(msg, ImageLoggerLevel::ERROR, RGB8BitPixel{255, 0, 0});
+			}
 			return Image<RGB16BitPixel>{16, 16, 65035, PBM_BINARY, 3};
 		}
 
