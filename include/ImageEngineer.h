@@ -4,6 +4,11 @@
 #ifndef IMAGEENGINEER_H
 #define IMAGEENGINEER_H
 
+// IMPORTANT NOTICE!!!!!!
+/*
+THIS SINGLE HEADER IS NOW OUTDATED. PLEASE USE THE REGULAR!!
+THIS IS KEPT FOR HISTORICAL PURPOSES!!
+*/
 /**
  * @file ImageEngineer.h
  * @brief Single-header aggregation of the project's image types, IO and ops.
